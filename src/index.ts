@@ -31,9 +31,33 @@ async function bootstrap() {
   const client = createDiscordClient();
   await startBot(client);
 
+  // 3. Lightweight HTTP health-check server for Cloud platforms (Hugging Face Spaces, Koyeb, etc.)
+  const port = Number(process.env.PORT) || 7860;
+  const server = (await import('node:http')).createServer((req, res) => {
+    if (req.url === '/health' || req.url === '/') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          status: 'online',
+          name: 'NekoAI Discord Bot',
+          uptime: Math.floor(process.uptime()),
+          timestamp: new Date().toISOString(),
+        })
+      );
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not Found');
+    }
+  });
+
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`[HTTP] Cloud health check server listening on port ${port}`);
+  });
+
   // Graceful shutdown
   const shutdown = () => {
     console.log('\n[SYSTEM] Gracefully shutting down NekoAI bot...');
+    server.close();
     modelManager.destroy();
     client.destroy();
     process.exit(0);

@@ -1,3 +1,13 @@
+---
+title: NekoAI Discord Bot
+emoji: 🌸
+colorFrom: pink
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # NekoAI Discord Bot
 
 > Intelligent Discord bot engine powered by **TypeScript**, featuring **OpenRouter free model auto-rotation**, multimodal **Vision** support, **real-time web search**, multi-layer defense against **Prompt Injection & Jailbreaks**, and optimized system instructions for the **NekoAI** persona.
