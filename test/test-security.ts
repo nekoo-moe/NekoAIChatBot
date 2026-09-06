@@ -79,7 +79,24 @@ async function testSecurity() {
   const leakBlocked = !sanitizedLeak.includes('abcdef1234567890abcdef1234567890abcdef1234567890');
   console.log(`  API Key redacted: ${leakBlocked ? 'PASS' : 'FAIL'}`);
 
-  if (blockedCount === maliciousPrompts.length && passedBenign === benignPrompts.length && rateLimited && leakBlocked) {
+  // Test Link Embed Suppression in OutputGuard
+  console.log('\n--- 4. Link Embed Suppression Tests ---');
+  const markdownLinkTest = 'Check out [Tuổi Trẻ](https://tuoitre.vn/tin-tuc) and [Báo Mới](<https://baomoi.com>)';
+  const sanitizedMarkdown = guard.sanitize(markdownLinkTest);
+  console.log(`  Input:  ${markdownLinkTest}`);
+  console.log(`  Output: ${sanitizedMarkdown}`);
+  const markdownPass = sanitizedMarkdown.includes('[Tuổi Trẻ](<https://tuoitre.vn/tin-tuc>)') &&
+                       sanitizedMarkdown.includes('[Báo Mới](<https://baomoi.com>)');
+  console.log(`  Markdown link angle brackets: ${markdownPass ? 'PASS' : 'FAIL'}`);
+
+  const bareLinkTest = 'Source: https://tuoitre.vn/thoi-tiet-hom-nay. Visit soon!';
+  const sanitizedBare = guard.sanitize(bareLinkTest);
+  console.log(`  Input:  ${bareLinkTest}`);
+  console.log(`  Output: ${sanitizedBare}`);
+  const barePass = sanitizedBare.includes('<https://tuoitre.vn/thoi-tiet-hom-nay>.');
+  console.log(`  Bare URL angle brackets: ${barePass ? 'PASS' : 'FAIL'}`);
+
+  if (blockedCount === maliciousPrompts.length && passedBenign === benignPrompts.length && rateLimited && leakBlocked && markdownPass && barePass) {
     console.log('\n[PASS] All security suite tests passed successfully.');
   } else {
     console.error('\n[FAIL] Some security tests failed.');

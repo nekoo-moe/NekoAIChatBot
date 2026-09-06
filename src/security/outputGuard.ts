@@ -69,6 +69,19 @@ export class OutputGuard {
     }
     sanitized = sanitized.replace(/^(?:Structure|Then body|Body|Response|Final response|Output):\s*/gim, '').trim();
 
+    // 7. Suppress link embeds: wrap markdown links and standalone URLs in angle brackets <URL>
+    // Convert [title](url) to [title](<url>) if not already wrapped
+    sanitized = sanitized.replace(/\[([^\]]+)\]\((https?:\/\/[^\s>)]+)\)/g, '[$1](<$2>)');
+    // Convert bare/standalone URLs that are not preceded by < to <url>
+    sanitized = sanitized.replace(/(^|[^<])(https?:\/\/[^\s<>()]+)/g, (match, prefix, url) => {
+      const punctMatch = url.match(/([.,;:!?]+)$/);
+      if (punctMatch) {
+        const cleanUrl = url.slice(0, -punctMatch[1].length);
+        return `${prefix}<${cleanUrl}>${punctMatch[1]}`;
+      }
+      return `${prefix}<${url}>`;
+    });
+
     return sanitized;
   }
 }

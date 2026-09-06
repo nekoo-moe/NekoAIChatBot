@@ -1,4 +1,4 @@
-import { Message, Client, ChannelType } from 'discord.js';
+import { Message, Client, ChannelType, MessageFlags } from 'discord.js';
 import { RateLimiter } from '../../security/rateLimiter.js';
 import { InjectionDetector } from '../../security/injectionDetector.js';
 import { OutputGuard } from '../../security/outputGuard.js';
@@ -137,10 +137,14 @@ export async function handleMessage(message: Message, client: Client): Promise<v
         await message.reply({
           content: chunks[i],
           allowedMentions: { repliedUser: false }, // Avoid annoying user ping
+          flags: MessageFlags.SuppressEmbeds,
         });
       } else {
         if ('send' in channel && typeof channel.send === 'function') {
-          await (channel as any).send(chunks[i]);
+          await (channel as any).send({
+            content: chunks[i],
+            flags: MessageFlags.SuppressEmbeds,
+          });
         }
       }
     }
