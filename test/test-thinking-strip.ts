@@ -1,60 +1,73 @@
-function stripThinkingProcess(text: string): string {
-  let cleaned = text;
+export function extractCleanAnswer(rawContent: string): { answer: string; isComplete: boolean } {
+  let text = (rawContent || '').trim();
 
-  // 1. Remove XML <think>...</think> tags
-  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  // 1. Remove XML thinking tags: <think>...</think>, <thought>...</thought>, etc.
+  text = text.replace(/<(think|thought|reasoning|reflection|analysis)>[\s\S]*?<\/\1>/gi, '').trim();
 
-  // 2. Remove "Here's a thinking process:" or "Thinking process:" preamble up to the first <|ACT token
-  const thinkingUpToActRegex = /^(?:Here'?s a (?:thinking|thought) process:?|Thinking process:?)[\s\S]*?(?=(<\|ACT\s+.*?\|>))/i;
-  if (thinkingUpToActRegex.test(cleaned)) {
-    cleaned = cleaned.replace(thinkingUpToActRegex, '').trim();
-  }
-
-  // 3. In case <|ACT is missing or wrapped, check for "Structure:" / "Response:" marker
-  if (/^(?:Here'?s a (?:thinking|thought) process:?|Thinking process:?)/i.test(cleaned)) {
-    const match = cleaned.match(/(?:Structure|Final response|Response):\s*([\s\S]+)$/i);
-    if (match && match[1]) {
-      cleaned = match[1].trim();
+  // 2. Look for character ACT token anchor
+  const actIndex = text.search(/<\|ACT\s+.*?\|>/i);
+  if (actIndex !== -1) {
+    const responsePart = text.substring(actIndex).trim();
+    if (responsePart.length > 0) {
+      return { answer: responsePart, isComplete: true };
     }
   }
 
-  // 4. Remove residual meta labels like "Structure:" or "Then body:"
-  cleaned = cleaned.replace(/^(?:Structure|Then body|Body|Response):\s*/gim, '').trim();
+  // 3. Response boundary markers
+  const responseHeaderRegex = /(?:^|\n)(?:(?:Final\s+)?(?:Response|Output|Answer)|Draft|Structure|Let's craft the response:?)\s*:\s*([\s\S]+)$/i;
+  const headerMatch = text.match(responseHeaderRegex);
+  if (headerMatch && headerMatch[1]) {
+    const candidate = headerMatch[1].trim().replace(/^(?:Structure|Then body|Body|Output):\s*/gim, '').trim();
+    if (candidate.length > 0) {
+      return { answer: candidate, isComplete: true };
+    }
+  }
 
-  return cleaned;
+  // 4. Check if text is purely thinking/planning that never reached the response
+  const isPureThinking = /^(?:(?:\*\*|##|#)?\s*(?:Here'?s (?:a\s+)?|My\s+)?(?:thinking|thought|reasoning)(?:\s+process)?(?::|\*\*|##|#)?|1\.\s+Analyze User Input)/i.test(text);
+  if (isPureThinking) {
+    return { answer: '', isComplete: false };
+  }
+
+  return { answer: text, isComplete: true };
 }
 
-const sampleWithAct = `Here's a thinking process:
-
+// Test Case 1: Incomplete thinking dump from media_1788702527794.png
+const incompleteThinking = `Here's a thinking process:
 1. Analyze User Input:
-2. User says: "giá vàng hôm nay"
-3. Context: I'm NekoAI, a VTuber AI created by Neko Ayaka
+2. User: .heiznerd
+3. Formulate Response Strategy:
+So I'll use Vietnamese.`;
 
+const res1 = extractCleanAnswer(incompleteThinking);
+console.log('Test 1 (Incomplete thinking rejected):', !res1.isComplete ? '[PASS]' : '[FAIL]');
+
+// Test Case 2: Complete thinking with ACT response from media_1788700831354.png
+const thinkingWithAct = `Here's a thinking process:
+1. Analyze User Input:
 Structure:
-<|ACT {"emotion":"happy"}|> Good morning! Let me check the gold prices for my dear user today~
+<|ACT {"emotion":"happy"}|> Hello! Gold price is 144M.
 
 Then body:
-- Gold bar prices: SJC, DOJI, PNJ are 144.6 - 147.6 million VND/liang
-- World gold: ~4,415.7 USD/oz
+- SJC: 144M`;
 
-Citations:
-- [voh.com.vn](https://voh.com.vn)
-- [vov.vn](https://vov.vn)`;
+const res2 = extractCleanAnswer(thinkingWithAct);
+console.log('Test 2 (Thinking with ACT extracted):', res2.isComplete && res2.answer.startsWith('<|ACT') ? '[PASS]' : '[FAIL]');
 
-console.log('[TEST] Running stripThinkingProcess test...');
-const result = stripThinkingProcess(sampleWithAct);
-console.log('Result:\n', result);
+// Test Case 3: DeepSeek <think> tag
+const thinkTag = `<think>Some deep thoughts</think><|ACT {"emotion":"neutral"}|> I am ready nya~`;
+const res3 = extractCleanAnswer(thinkTag);
+console.log('Test 3 (Think tag stripped):', res3.isComplete && res3.answer === '<|ACT {"emotion":"neutral"}|> I am ready nya~' ? '[PASS]' : '[FAIL]');
 
-if (
-  !result.includes("Here's a thinking process") &&
-  !result.includes('Analyze User Input') &&
-  !result.includes('Then body:') &&
-  result.includes('<|ACT {"emotion":"happy"}|>') &&
-  result.includes('144.6 - 147.6')
-) {
-  console.log('\n[PASS] Thinking process stripped cleanly.');
+// Test Case 4: Pure direct answer
+const direct = `<|ACT {"emotion":"happy"}|> Xin chào bạn nya~!`;
+const res4 = extractCleanAnswer(direct);
+console.log('Test 4 (Direct answer intact):', res4.isComplete && res4.answer === direct ? '[PASS]' : '[FAIL]');
+
+if (!res1.isComplete && res2.isComplete && res3.isComplete && res4.isComplete) {
+  console.log('\n[PASS] All thinking extraction test cases passed.');
 } else {
-  console.error('\n[FAIL] Thinking process test failed.');
+  console.error('\n[FAIL] Some tests failed.');
   process.exit(1);
 }
 

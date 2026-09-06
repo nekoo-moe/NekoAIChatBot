@@ -55,15 +55,16 @@ export class OutputGuard {
       .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
       .trim();
 
-    // 6. Strip thinking process dumps
-    sanitized = sanitized.replace(/<(think|thought|reasoning|reflection)>[\s\S]*?<\/\1>/gi, '').trim();
-    const thinkingUpToActRegex = /^(?:(?:\*\*|##|#)?\s*(?:Here'?s (?:a\s+)?|My\s+)?(?:thinking|thought|reasoning)(?:\s+process)?(?::|\*\*|##|#)?|Let's think step by step:?)[\s\S]*?(?=(<\|ACT\s+.*?\|>))/i;
-    if (thinkingUpToActRegex.test(sanitized)) {
-      sanitized = sanitized.replace(thinkingUpToActRegex, '').trim();
-    } else if (/^(?:(?:\*\*|##|#)?\s*(?:Here'?s (?:a\s+)?|My\s+)?(?:thinking|thought|reasoning)(?:\s+process)?(?::|\*\*|##|#)?|Let's think step by step:?)/i.test(sanitized)) {
-      const match = sanitized.match(/(?:Structure|Final response|Response|Output):\s*([\s\S]+)$/i);
-      if (match && match[1]) {
-        sanitized = match[1].trim();
+    // 6. Strip thinking process dumps and extract clean character response
+    sanitized = sanitized.replace(/<(think|thought|reasoning|reflection|analysis)>[\s\S]*?<\/\1>/gi, '').trim();
+    const actIndex = sanitized.search(/<\|ACT\s+.*?\|>/i);
+    if (actIndex !== -1) {
+      sanitized = sanitized.substring(actIndex).trim();
+    } else {
+      const responseHeaderRegex = /(?:^|\n)(?:(?:Final\s+)?(?:Response|Output|Answer)|Draft|Structure|Let's craft the response:?)\s*:\s*([\s\S]+)$/i;
+      const headerMatch = sanitized.match(responseHeaderRegex);
+      if (headerMatch && headerMatch[1]) {
+        sanitized = headerMatch[1].trim();
       }
     }
     sanitized = sanitized.replace(/^(?:Structure|Then body|Body|Response|Final response|Output):\s*/gim, '').trim();

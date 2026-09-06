@@ -87,7 +87,7 @@ export class OpenRouterClient {
           models: fallbackModels.length > 0 ? fallbackModels : undefined,
           messages: currentMessages,
           temperature: options.temperature ?? 0.7,
-          max_tokens: options.maxTokens ?? 1024,
+          max_tokens: options.maxTokens ?? 4096,
           plugins: config.ENABLE_WEB_SEARCH
             ? [
                 {
@@ -96,9 +96,6 @@ export class OpenRouterClient {
                 },
               ]
             : undefined,
-          reasoning: {
-            exclude: true,
-          },
         };
 
         const response = await axios.post<OpenRouterChatResponse>(
@@ -122,6 +119,12 @@ export class OpenRouterClient {
 
         const rawContent = choice.message.content?.trim() || '';
 
+        // Check if separate reasoning field was provided by OpenRouter
+        const separateReasoning = (choice.message as any).reasoning;
+        if (separateReasoning) {
+          console.log(`[OPENROUTER] Model [${selectedModel}] provided internal reasoning (${separateReasoning.length} chars)`);
+        }
+
         // 1. Check for standard JSON tool calls
         let activeToolCalls: ToolCall[] = [];
         if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
@@ -140,21 +143,30 @@ export class OpenRouterClient {
             fallbackModels
           );
           if (toolCallResult) {
-            return {
-              content: this.cleanResidualToolTags(toolCallResult.content),
-              usedModel: toolCallResult.usedModel || selectedModel,
-              retriesCount: attempts - 1,
-            };
+            const cleaned = this.cleanResidualToolTags(toolCallResult.content);
+            const extracted = this.extractCleanAnswer(cleaned);
+            if (extracted.isComplete && extracted.answer) {
+              return {
+                content: extracted.answer,
+                usedModel: toolCallResult.usedModel || selectedModel,
+                retriesCount: attempts - 1,
+              };
+            }
           }
         }
 
-        const cleanReply = this.cleanResidualToolTags(rawContent);
-        if (!cleanReply) {
-          throw new Error('Received empty text content from model response.');
+        const cleanedContent = this.cleanResidualToolTags(rawContent);
+        const extraction = this.extractCleanAnswer(cleanedContent);
+
+        if (!extraction.isComplete || !extraction.answer) {
+          console.warn(
+            `[WARN] Model [${selectedModel}] produced an incomplete thinking trace without a final answer (finish_reason: ${choice.finish_reason}). Failing over to next model...`
+          );
+          continue;
         }
 
         return {
-          content: cleanReply,
+          content: extraction.answer,
           usedModel: response.data.model || selectedModel,
           retriesCount: attempts - 1,
         };
@@ -285,7 +297,7 @@ export class OpenRouterClient {
         models: fallbackModels.length > 0 ? fallbackModels : undefined,
         messages: updatedMessages,
         temperature: 0.7,
-        max_tokens: 1024,
+        max_tokens: 4096,
       };
 
       const response = await axios.post<OpenRouterChatResponse>(
@@ -317,45 +329,55 @@ export class OpenRouterClient {
   }
 
   /**
-   * Strips any unexecuted or residual DSML/XML tags and thinking dumps
+   * Strips any unexecuted or residual DSML/XML tags from text
    */
   private cleanResidualToolTags(text: string): string {
-    let cleaned = text
+    return text
       .replace(/<[\s|]*DSML[\s|]*[\s\S]*?<\/[\s|]*DSML[\s|]*tool_calls>/gi, '')
       .replace(/<[\s|]*DSML[\s|]*[\s\S]*?<\/[\s|]*DSML[\s|]*invoke>/gi, '')
       .replace(/<[\s|]*DSML[\s|]*.*?>/gi, '')
       .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
       .trim();
-
-    return this.stripThinkingProcess(cleaned);
   }
 
   /**
-   * Strips out raw thinking process dumps ("Here's a thinking process:", <think>...</think>, etc.)
+   * Extracts clean conversational answer from model output,
+   * isolating thinking/reasoning and verifying that full dialogue was produced
    */
-  private stripThinkingProcess(text: string): string {
-    let cleaned = text;
+  public extractCleanAnswer(rawContent: string): { answer: string; isComplete: boolean } {
+    let text = (rawContent || '').trim();
 
-    // 1. Remove XML thinking tags (<think>, <thought>, <reasoning>, <reflection>)
-    cleaned = cleaned.replace(/<(think|thought|reasoning|reflection)>[\s\S]*?<\/\1>/gi, '').trim();
+    // 1. Remove XML thinking tags (<think>, <thought>, <reasoning>, <reflection>, <analysis>)
+    text = text.replace(/<(think|thought|reasoning|reflection|analysis)>[\s\S]*?<\/\1>/gi, '').trim();
 
-    // 2. Remove thought preambles up to the first <|ACT token
-    const thinkingUpToActRegex = /^(?:(?:\*\*|##|#)?\s*(?:Here'?s (?:a\s+)?|My\s+)?(?:thinking|thought|reasoning)(?:\s+process)?(?::|\*\*|##|#)?|Let's think step by step:?)[\s\S]*?(?=(<\|ACT\s+.*?\|>))/i;
-    if (thinkingUpToActRegex.test(cleaned)) {
-      cleaned = cleaned.replace(thinkingUpToActRegex, '').trim();
-    }
-
-    // 3. In case <|ACT is missing or wrapped under "Structure:" / "Response:" marker
-    if (/^(?:(?:\*\*|##|#)?\s*(?:Here'?s (?:a\s+)?|My\s+)?(?:thinking|thought|reasoning)(?:\s+process)?(?::|\*\*|##|#)?|Let's think step by step:?)/i.test(cleaned)) {
-      const match = cleaned.match(/(?:Structure|Final response|Response|Output):\s*([\s\S]+)$/i);
-      if (match && match[1]) {
-        cleaned = match[1].trim();
+    // 2. Look for character ACT token anchor
+    const actIndex = text.search(/<\|ACT\s+.*?\|>/i);
+    if (actIndex !== -1) {
+      const responsePart = text.substring(actIndex).trim();
+      if (responsePart.length > 0) {
+        return { answer: responsePart, isComplete: true };
       }
     }
 
-    // 4. Remove residual meta labels like "Structure:", "Then body:", "Let's craft the response:"
-    cleaned = cleaned.replace(/^(?:Structure|Then body|Body|Response|Final response|Output):\s*/gim, '').trim();
+    // 3. Response boundary markers ("Final response:", "Response:", "Output:", "Structure:", "Let's craft the response:")
+    const responseHeaderRegex = /(?:^|\n)(?:(?:Final\s+)?(?:Response|Output|Answer)|Draft|Structure|Let's craft the response:?)\s*:\s*([\s\S]+)$/i;
+    const headerMatch = text.match(responseHeaderRegex);
+    if (headerMatch && headerMatch[1]) {
+      const candidate = headerMatch[1].trim().replace(/^(?:Structure|Then body|Body|Output):\s*/gim, '').trim();
+      if (candidate.length > 0) {
+        return { answer: candidate, isComplete: true };
+      }
+    }
 
-    return cleaned;
+    // 4. Check if text is purely thinking/planning notes that never reached the response
+    const isPureThinking = /^(?:(?:\*\*|##|#)?\s*(?:Here'?s (?:a\s+)?|My\s+)?(?:thinking|thought|reasoning)(?:\s+process)?(?::|\*\*|##|#)?|1\.\s+Analyze User Input)/i.test(text);
+    if (isPureThinking) {
+      return { answer: '', isComplete: false };
+    }
+
+    // 5. Remove residual meta labels if present
+    text = text.replace(/^(?:Structure|Then body|Body|Response|Final response|Output):\s*/gim, '').trim();
+
+    return { answer: text, isComplete: text.length > 0 };
   }
 }

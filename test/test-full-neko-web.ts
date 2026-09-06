@@ -1,6 +1,3 @@
-import axios from 'axios';
-import { config } from '../src/config.js';
-import { getNekoSystemPrompt } from '../src/prompt/systemPrompt.js';
 import { ActParser } from '../src/bot/utils/actParser.js';
 
 async function testFullNekoWeb() {

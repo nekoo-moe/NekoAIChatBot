@@ -93,6 +93,7 @@ export interface OpenRouterChatChoice {
   message: {
     role: 'assistant';
     content: string | null;
+    reasoning?: string | null;
     tool_calls?: ToolCall[];
   };
   finish_reason: string;
