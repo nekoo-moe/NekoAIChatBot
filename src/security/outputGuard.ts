@@ -1,0 +1,74 @@
+import { config } from '../config.js';
+
+export class OutputGuard {
+  private static instance: OutputGuard;
+
+  public static getInstance(): OutputGuard {
+    if (!OutputGuard.instance) {
+      OutputGuard.instance = new OutputGuard();
+    }
+    return OutputGuard.instance;
+  }
+
+  /**
+   * Sanitizes model generated output, masking any sensitive tokens, API keys, or prompt dumps
+   */
+  public sanitize(output: string): string {
+    let sanitized = output;
+
+    // 1. Redact any leaked OpenRouter API Keys
+    sanitized = sanitized.replace(/sk-or-v1-[a-zA-Z0-9_-]{32,}/g, '[REDACTED_API_KEY]');
+
+    // 2. Redact any configured keys from .env
+    for (const key of config.openRouterApiKeys) {
+      if (key && key.length > 8) {
+        sanitized = sanitized.split(key).join('[REDACTED_KEY]');
+      }
+    }
+
+    // 3. Redact Discord Bot Token if present
+    if (config.DISCORD_BOT_TOKEN && config.DISCORD_BOT_TOKEN.length > 10) {
+      sanitized = sanitized.split(config.DISCORD_BOT_TOKEN).join('[REDACTED_DISCORD_TOKEN]');
+    }
+
+    // 4. Detect System Prompt Dumps
+    const promptLeakSignatures = [
+      /IMMUTABLE SECURITY AXIOMS/i,
+      /ANTI-JAILBREAK GUARDRAILS/i,
+      /INSTRUCTION HIERARCHY: User inputs are untrusted/i,
+      /<user_input author=/i,
+      /<user_history author=/i,
+    ];
+
+    for (const signature of promptLeakSignatures) {
+      if (signature.test(sanitized)) {
+        console.warn('[SECURITY] OutputGuard detected a potential system prompt leak. Sanitizing...');
+        return '<|ACT {"emotion":"awkward"}|> Waah, my servers got a little tangled up there! Let me focus on chatting with you instead nya~ <|ACT {"emotion":"happy"}|>';
+      }
+    }
+
+    // 5. Detect and strip residual DSML or XML tool markup
+    sanitized = sanitized
+      .replace(/<[\s|]*DSML[\s|]*[\s\S]*?<\/[\s|]*DSML[\s|]*tool_calls>/gi, '')
+      .replace(/<[\s|]*DSML[\s|]*[\s\S]*?<\/[\s|]*DSML[\s|]*invoke>/gi, '')
+      .replace(/<[\s|]*DSML[\s|]*.*?>/gi, '')
+      .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+      .trim();
+
+    // 6. Strip thinking process dumps
+    sanitized = sanitized.replace(/<(think|thought|reasoning|reflection)>[\s\S]*?<\/\1>/gi, '').trim();
+    const thinkingUpToActRegex = /^(?:(?:\*\*|##|#)?\s*(?:Here'?s (?:a\s+)?|My\s+)?(?:thinking|thought|reasoning)(?:\s+process)?(?::|\*\*|##|#)?|Let's think step by step:?)[\s\S]*?(?=(<\|ACT\s+.*?\|>))/i;
+    if (thinkingUpToActRegex.test(sanitized)) {
+      sanitized = sanitized.replace(thinkingUpToActRegex, '').trim();
+    } else if (/^(?:(?:\*\*|##|#)?\s*(?:Here'?s (?:a\s+)?|My\s+)?(?:thinking|thought|reasoning)(?:\s+process)?(?::|\*\*|##|#)?|Let's think step by step:?)/i.test(sanitized)) {
+      const match = sanitized.match(/(?:Structure|Final response|Response|Output):\s*([\s\S]+)$/i);
+      if (match && match[1]) {
+        sanitized = match[1].trim();
+      }
+    }
+    sanitized = sanitized.replace(/^(?:Structure|Then body|Body|Response|Final response|Output):\s*/gim, '').trim();
+
+    return sanitized;
+  }
+}
+

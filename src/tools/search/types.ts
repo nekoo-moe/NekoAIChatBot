@@ -1,0 +1,12 @@
+export interface SearchResultItem {
+  title: string;
+  url: string;
+  snippet: string;
+  source: string;
+}
+
+export interface SearchProvider {
+  name: string;
+  search(query: string, maxResults?: number): Promise<SearchResultItem[]>;
+}
+
