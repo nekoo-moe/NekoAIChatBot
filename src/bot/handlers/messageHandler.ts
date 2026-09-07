@@ -9,6 +9,7 @@ import { SearchRouter } from '../../tools/search/searchRouter.js';
 import { chunkMessage } from '../utils/chunker.js';
 import { ActParser } from '../utils/actParser.js';
 import { ConversationManager } from '../../memory/conversationManager.js';
+import { config } from '../../config.js';
 
 export async function handleMessage(message: Message, client: Client): Promise<void> {
   // Ignore messages from other bots or itself
@@ -150,7 +151,26 @@ export async function handleMessage(message: Message, client: Client): Promise<v
       await fetchReplyChain(referencedMessage, history, botId, 6);
     }
 
-    // 5. Build Conversation Payload
+    // 5. Check for Web Search Intent (Weather, News, Real-time Facts)
+    let searchContext: string | undefined = undefined;
+    if (config.ENABLE_WEB_SEARCH) {
+      const searchIntentQuery = ToolRegistry.shouldTriggerProactiveSearch(cleanContent);
+      if (searchIntentQuery) {
+        console.log(`[SEARCH] Proactive search triggered for query: "${searchIntentQuery}"`);
+        try {
+          const searchRouter = SearchRouter.getInstance();
+          const results = await searchRouter.search(searchIntentQuery, 4);
+          if (results.length > 0) {
+            searchContext = searchRouter.formatResults(results);
+            console.log(`[SEARCH] Retrieved ${results.length} real-time search result(s) for context injection.`);
+          }
+        } catch (err: any) {
+          console.warn(`[SEARCH] Proactive search failed: ${err.message}`);
+        }
+      }
+    }
+
+    // 6. Build Conversation Payload
     const messages = buildConversationContext({
       history,
       currentMessage: {
@@ -158,13 +178,15 @@ export async function handleMessage(message: Message, client: Client): Promise<v
         content: injectionCheck.sanitizedText || cleanContent,
         imageUrls,
       },
+      searchContext,
     });
 
-    // 6. Request Completion from Unified LLM Router (Gemini or OpenRouter with auto-failover)
+    // 7. Request Completion from Unified LLM Router (Gemini or OpenRouter with auto-failover)
     const llmRouter = LLMRouter.getInstance();
     const result = await llmRouter.generateChatCompletion({
       messages,
       hasImages: imageUrls.length > 0,
+      hasSearchContext: !!searchContext,
     });
 
     // 8. Output Guard: Sanitize and prevent leaks

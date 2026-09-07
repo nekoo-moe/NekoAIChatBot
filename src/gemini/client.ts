@@ -337,21 +337,17 @@ export class GeminiClient {
 
     // 2. Discovered models sorted by priority
     if (this.discoveredModels.length > 0) {
-      // Prioritize Gemma 4
+      // Prioritize Gemini 3.6 / Gemini 2.5 / Gemini models first (native Google Search grounding support)
+      const gemini = this.discoveredModels.filter((m) => m.toLowerCase().includes('gemini'));
+      list.push(...gemini);
+
+      // Prioritize Gemma 4 models
       const gemma4 = this.discoveredModels.filter((m) => m.toLowerCase().includes('gemma-4'));
       list.push(...gemma4);
-
-      // Prioritize Gemini 3.6 / Gemini 3
-      const gemini3 = this.discoveredModels.filter((m) => m.toLowerCase().includes('gemini-3'));
-      list.push(...gemini3);
 
       // Other Gemma models
       const otherGemma = this.discoveredModels.filter((m) => m.toLowerCase().includes('gemma') && !m.toLowerCase().includes('gemma-4'));
       list.push(...otherGemma);
-
-      // Other Gemini models
-      const otherGemini = this.discoveredModels.filter((m) => m.toLowerCase().includes('gemini') && !m.toLowerCase().includes('gemini-3'));
-      list.push(...otherGemini);
 
       // Remaining discovered
       for (const m of this.discoveredModels) {

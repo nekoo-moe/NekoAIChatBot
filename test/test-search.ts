@@ -1,35 +1,50 @@
 import { SearchRouter } from '../src/tools/search/searchRouter.js';
+import { ToolRegistry } from '../src/tools/toolRegistry.js';
 
 async function testSearch() {
   console.log('[TEST] Testing Multi-Engine No-Key Web Search Router...\n');
 
   const router = SearchRouter.getInstance();
-  const query = 'TypeScript programming language';
 
-  console.log(`[SEARCH] Query: "${query}"`);
-  const results = await router.search(query, 3);
+  // 1. Weather search test
+  const weatherQuery = 'dự báo thời tiết hà đông hôm nay';
+  console.log(`--- 1. Testing Weather Search: "${weatherQuery}" ---`);
+  const weatherTrigger = ToolRegistry.shouldTriggerProactiveSearch(weatherQuery);
+  console.log(`  Proactive search triggered: "${weatherTrigger}"`);
+  console.assert(weatherTrigger !== null, 'Weather query should trigger proactive search');
 
-  console.log(`\nRetrieved ${results.length} results:`);
-  results.forEach((r, idx) => {
-    console.log(`\n[Result #${idx + 1}] (${r.source})`);
-    console.log(`  Title:   ${r.title}`);
-    console.log(`  URL:     ${r.url}`);
-    console.log(`  Snippet: ${r.snippet.slice(0, 120)}...`);
+  const weatherResults = await router.search(weatherTrigger || weatherQuery, 3);
+  console.log(`  Retrieved ${weatherResults.length} weather results:`);
+  weatherResults.forEach((r, idx) => {
+    console.log(`  [Result #${idx + 1}] (${r.source}): ${r.title}`);
+    console.log(`    Snippet: ${r.snippet}`);
   });
+  console.assert(weatherResults.length > 0, 'Weather search must return at least 1 result');
 
-  const formatted = router.formatResults(results);
-  console.log('\nFormatted Markdown context:');
-  console.log(formatted.slice(0, 300) + '...');
+  // 2. News / Real-time search test
+  const newsQuery = 'tin tức công nghệ AI hôm nay';
+  console.log(`\n--- 2. Testing News Search: "${newsQuery}" ---`);
+  const newsTrigger = ToolRegistry.shouldTriggerProactiveSearch(newsQuery);
+  console.log(`  Proactive search triggered: "${newsTrigger}"`);
 
-  if (results.length > 0) {
-    console.log('\n[PASS] No-Key Web Search test passed.');
-  } else {
-    console.warn('\n[WARN] Search returned 0 results (network or temporary rate limit).');
-  }
+  const newsResults = await router.search(newsTrigger || newsQuery, 3);
+  console.log(`  Retrieved ${newsResults.length} news results:`);
+  newsResults.forEach((r, idx) => {
+    console.log(`  [Result #${idx + 1}] (${r.source}): ${r.title}`);
+  });
+  console.assert(newsResults.length > 0, 'News search must return at least 1 result');
+
+  // 3. Format Context Test
+  console.log('\n--- 3. Testing Context Formatting ---');
+  const formatted = router.formatResults(weatherResults);
+  console.log(formatted);
+  console.assert(formatted.includes('URL:'), 'Formatted context must contain URLs');
+
+  console.log('\n[PASS] All Search Router tests passed successfully!');
 }
 
 testSearch().catch((err) => {
-  console.error('Search test error:', err);
+  console.error('[FAIL] Search test error:', err);
   process.exit(1);
 });
 
