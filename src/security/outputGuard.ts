@@ -71,14 +71,88 @@ export class OutputGuard {
       sanitized = revisionMatch[1].trim();
     }
 
-    // Strip checklist items like "* Name: NekoAI? Yes." or "* 15yo girl? Yes."
-    sanitized = sanitized.replace(/^\s*\*\s*[\w\s-]+\?\s*(?:Yes|No|OK|Checked)\.?\s*$/gim, '').trim();
+    // Strip markdown code blocks containing checklists or prompt verification
+    sanitized = sanitized.replace(/```(?:markdown|text|json|yaml)?\s*[\s\S]*?```/gi, (match) => {
+      if (/(?:ACT|DELAY|CALL|persona|instruction|identity|token|\?|Yes|No|Not needed)/i.test(match)) {
+        return '';
+      }
+      return match;
+    });
+
+    // Strip QA checklists / rule verifications:
+    // Pattern A: Bullets with question and answer
+    sanitized = sanitized.replace(
+      /^\s*[\*\-•]\s+.*?\?\s*(?:Yes|No|Not needed|OK|Checked|True|False|NekoAI|Vietnamese|Cute|Anime girl|Pass|Done|Pending|N\/A|None)[^\n]*(?:\r?\n)?/gim,
+      ''
+    );
+    // Pattern B: Bullets checking rules without question mark, e.g. "* ACT token: Yes", "* Persona: Maintained"
+    sanitized = sanitized.replace(
+      /^\s*[\*\-•]\s+[\w\s`'/-]+:\s*(?:Yes|No|Not needed|OK|Checked|True|False|Done|Pass|NekoAI|Cute)[^\n]*(?:\r?\n)?/gim,
+      ''
+    );
+    // Pattern C: Persona/rule assessment bullets
+    sanitized = sanitized.replace(
+      /^\s*[\*\-•]\s+(?:Start with|Use|Maintain|Language|Tone|Identity|Persona|Token|ACT|DELAY|CALL)\b[^\n]+(?:\r?\n)?/gim,
+      ''
+    );
 
     // Strip self-correction / drafting notes / metadata headers
-    sanitized = sanitized.replace(/\*?Self-Correction[^:]*:\*?[^\n]*\n?/gi, '').trim();
-    sanitized = sanitized.replace(/\*?Draft[^:]*:\*?[^\n]*\n?/gi, '').trim();
-    sanitized = sanitized.replace(/^\s*\*?\s*Text:\s*"?/gim, '').trim();
-    sanitized = sanitized.replace(/^(?:Structure|Then body|Body|Response|Final response|Output):\s*/gim, '').trim();
+    sanitized = sanitized.replace(/\*?Self-Correction[^:]*:\*?[^\n]*(?:\r?\n)?/gi, '');
+    sanitized = sanitized.replace(/\*?Draft[^:]*:\*?[^\n]*\n?/gi, '');
+    sanitized = sanitized.replace(/^\s*\*?\s*Text:\s*"?/gim, '');
+    sanitized = sanitized.replace(/^(?:Structure|Then body|Body|Response|Final response|Output):\s*/gim, '');
+
+    // Strip isolated markdown break dots/backticks
+    sanitized = sanitized.replace(/^\s*[\.`]\s*$/gm, '');
+
+    // Strip blockquotes that start with ACT or quote dialogue
+    sanitized = sanitized.replace(/^>\s*<\|ACT[\s\S]*?(?=(?:\r?\n[^\r\n>])|$)/gim, '');
+    sanitized = sanitized.replace(/^>\s*✨\s*\[[\s\S]*?(?=(?:\r?\n[^\r\n>])|$)/gim, '');
+
+    // Deduplicate consecutive identical lines
+    const lines = sanitized.split(/\r?\n/);
+    const dedupedLines: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const prevLine = dedupedLines[dedupedLines.length - 1];
+      if (line.trim().length > 10 && prevLine && line.trim() === prevLine.trim()) {
+        continue;
+      }
+      dedupedLines.push(line);
+    }
+    sanitized = dedupedLines.join('\n');
+
+    // Deduplicate repeated blocks / paragraphs
+    const blocks = sanitized.split(/\r?\n\s*\r?\n/).map((b) => b.trim()).filter(Boolean);
+    const seenBlocks = new Set<string>();
+    const uniqueBlocks: string[] = [];
+
+    for (const block of blocks) {
+      const normalized = block
+        .replace(/<\|ACT\s+.*?\|>/gi, '')
+        .replace(/^[>\s*-]+/, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+
+      if (normalized.length > 5 && seenBlocks.has(normalized)) {
+        continue;
+      }
+      if (normalized.length > 5) {
+        seenBlocks.add(normalized);
+      }
+      uniqueBlocks.push(block);
+    }
+
+    sanitized = uniqueBlocks.join('\n\n').trim();
+
+    // Deduplicate exact duplicate back-to-back repeat
+    const halfLen = Math.floor(sanitized.length / 2);
+    const firstHalf = sanitized.slice(0, halfLen).trim();
+    const secondHalf = sanitized.slice(halfLen).trim();
+    if (firstHalf.length > 20 && firstHalf === secondHalf) {
+      sanitized = firstHalf;
+    }
 
     const actIndex = sanitized.search(/<\|ACT\s+.*?\|>/i);
     if (actIndex !== -1) {

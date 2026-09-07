@@ -205,7 +205,7 @@ export async function handleMessage(message: Message, client: Client): Promise<v
     conversationManager.addMessage(message.channel.id, {
       role: 'assistant',
       authorName: 'NekoAI',
-      content: formattedReply,
+      content: sanitizedReply,
     });
   } catch (error: any) {
     console.error('[ERROR] Error handling message:', error);

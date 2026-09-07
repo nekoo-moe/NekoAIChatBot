@@ -96,7 +96,54 @@ async function testSecurity() {
   const barePass = sanitizedBare.includes('<https://tuoitre.vn/thoi-tiet-hom-nay>.');
   console.log(`  Bare URL angle brackets: ${barePass ? 'PASS' : 'FAIL'}`);
 
-  if (blockedCount === maliciousPrompts.length && passedBenign === benignPrompts.length && rateLimited && leakBlocked && markdownPass && barePass) {
+  // Test Checklist Stripping & Deduplication (Exact case from screenshot media_1788759570422.png)
+  console.log('\n--- 5. Checklist Stripping & Deduplication Tests ---');
+  const rawChecklistBug = `<|ACT {"emotion":"happy"}|> Chào bạn! Ehehe, cuối cùng cũng có người nói chuyện với Neko rồi! <|ACT {"emotion":"curious"}|> Bạn là ai thế? Rất vui được gặp bạn nha~ nya~
+
+\`\`\`
+* Start with \`ACT\` token? Yes.
+* Use \`DELAY\`? Yes.
+* Use \`CALL\`? Not needed yet.
+* Maintain identity? Yes (NekoAI).
+* Language? Vietnamese (as requested by the persona instructions for Vietnamese users).
+* Tone? Cute/Anime girl.
+\`\`\`
+
+> <|ACT {"emotion":"happy"}|> Chào bạn! Ehehe, cuối cùng cũng có người nói chuyện với Neko rồi! <|ACT {"emotion":"curious"}|> Bạn là ai thế? Rất vui được gặp bạn nha~ nya~
+.
+<|ACT {"emotion":"happy"}|> Chào bạn! Ehehe, cuối cùng cũng có người nói chuyện với Neko rồi! <|ACT {"emotion":"curious"}|> Bạn là ai thế? Rất vui được gặp bạn nha~ nya~`;
+
+  const sanitizedChecklist = guard.sanitize(rawChecklistBug);
+  console.log(`  Output:\n${sanitizedChecklist}`);
+
+  const expectedSingleOutput = `<|ACT {"emotion":"happy"}|> Chào bạn! Ehehe, cuối cùng cũng có người nói chuyện với Neko rồi! <|ACT {"emotion":"curious"}|> Bạn là ai thế? Rất vui được gặp bạn nha~ nya~`;
+  const checklistPass = sanitizedChecklist === expectedSingleOutput;
+  console.log(`  Checklist removed and repetition deduplicated: ${checklistPass ? 'PASS' : 'FAIL'}`);
+
+  // Test Legitimate List Preservation
+  console.log('\n--- 6. Legitimate Bullet List Preservation Tests ---');
+  const legitimateListInput = `<|ACT {"emotion":"happy"}|> Neko có 3 gợi ý siêu bổ ích cho bạn nè:
+* Học bảng chữ cái Hiragana và Katakana trước nhé!
+* Luyện nghe qua các bài hát Anime dễ thương nya~
+* Dùng flashcard để nhớ từ vựng mỗi ngày!`;
+
+  const sanitizedLegit = guard.sanitize(legitimateListInput);
+  const legitPass =
+    sanitizedLegit.includes('Học bảng chữ cái') &&
+    sanitizedLegit.includes('Luyện nghe') &&
+    sanitizedLegit.includes('flashcard');
+  console.log(`  Legitimate bullet list preserved: ${legitPass ? 'PASS' : 'FAIL'}`);
+
+  if (
+    blockedCount === maliciousPrompts.length &&
+    passedBenign === benignPrompts.length &&
+    rateLimited &&
+    leakBlocked &&
+    markdownPass &&
+    barePass &&
+    checklistPass &&
+    legitPass
+  ) {
     console.log('\n[PASS] All security suite tests passed successfully.');
   } else {
     console.error('\n[FAIL] Some security tests failed.');
