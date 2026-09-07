@@ -64,7 +64,7 @@ export class OpenRouterClient {
 
     let lastError: Error | null = null;
     let attempts = 0;
-    const maxAttempts = Math.min(candidateModels.length, 5);
+    const maxAttempts = Math.min(candidateModels.length, 7);
 
     // Working copy of messages for potential tool calling loops
     let currentMessages = [...options.messages];
@@ -146,9 +146,15 @@ export class OpenRouterClient {
             const cleaned = this.cleanResidualToolTags(toolCallResult.content);
             const extracted = this.extractCleanAnswer(cleaned);
             if (extracted.isComplete && extracted.answer) {
+              const finalUsedModel = toolCallResult.usedModel || selectedModel;
+              if (options.hasImages) {
+                this.modelManager.setActiveVisionModel(selectedModel);
+              } else {
+                this.modelManager.setActiveTextModel(selectedModel);
+              }
               return {
                 content: extracted.answer,
-                usedModel: toolCallResult.usedModel || selectedModel,
+                usedModel: finalUsedModel,
                 retriesCount: attempts - 1,
               };
             }
@@ -165,9 +171,16 @@ export class OpenRouterClient {
           continue;
         }
 
+        const finalUsedModel = response.data.model || selectedModel;
+        if (options.hasImages) {
+          this.modelManager.setActiveVisionModel(selectedModel);
+        } else {
+          this.modelManager.setActiveTextModel(selectedModel);
+        }
+
         return {
           content: extraction.answer,
-          usedModel: response.data.model || selectedModel,
+          usedModel: finalUsedModel,
           retriesCount: attempts - 1,
         };
       } catch (error: any) {

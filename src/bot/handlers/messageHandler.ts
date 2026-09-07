@@ -8,6 +8,7 @@ import { ToolRegistry } from '../../tools/toolRegistry.js';
 import { SearchRouter } from '../../tools/search/searchRouter.js';
 import { chunkMessage } from '../utils/chunker.js';
 import { ActParser } from '../utils/actParser.js';
+import { ConversationManager } from '../../memory/conversationManager.js';
 
 export async function handleMessage(message: Message, client: Client): Promise<void> {
   // Ignore messages from other bots or itself
@@ -58,6 +59,24 @@ export async function handleMessage(message: Message, client: Client): Promise<v
     return;
   }
 
+  // Check if user requested memory reset (e.g. !reset, !clear, or natural language reset)
+  const isResetCommand =
+    /^(?:!reset|!clear|\/reset|\/clear)\b/i.test(cleanContent) ||
+    /^(?:quên\s+(?:hết\s+)?(?:đi|bộ\s*nhớ|cuộc\s*trò\s*chuyện)|xóa\s+(?:bộ\s*nhớ|lịch\s*sử))\b/i.test(cleanContent);
+
+  if (isResetCommand) {
+    ConversationManager.getInstance().clear(message.channel.id);
+    const resetAck = ActParser.format(
+      `<|ACT {"emotion":"happy"}|> Dạ vâng nya~! Mình đã xóa sạch bộ nhớ của kênh này rồi, chúng mình bắt đầu cuộc trò chuyện mới toanh nha! <|ACT {"emotion":"curious"}|>`
+    );
+    await message.reply({
+      content: resetAck,
+      allowedMentions: { repliedUser: false },
+      flags: MessageFlags.SuppressEmbeds,
+    });
+    return;
+  }
+
   // 1. Rate Limit Verification
   const rateLimiter = RateLimiter.getInstance();
   const rateCheck = rateLimiter.checkLimit(message.author.id, message.channel.id);
@@ -93,7 +112,10 @@ export async function handleMessage(message: Message, client: Client): Promise<v
   }
 
   try {
-    // 4. Build Context History (Up to 4 previous turns if reply chain exists)
+    // 4. Build Context History (From ConversationManager channel memory + reply chain enrichment)
+    const conversationManager = ConversationManager.getInstance();
+    const channelHistory = conversationManager.getHistory(message.channel.id);
+
     const history: Array<{
       role: 'user' | 'assistant';
       authorName?: string;
@@ -101,8 +123,31 @@ export async function handleMessage(message: Message, client: Client): Promise<v
       imageUrls?: string[];
     }> = [];
 
-    if (referencedMessage) {
-      await fetchReplyChain(referencedMessage, history, botId, 4);
+    if (channelHistory.length > 0) {
+      for (const msg of channelHistory) {
+        history.push({
+          role: msg.role,
+          authorName: msg.authorName,
+          content: msg.content,
+          imageUrls: msg.imageUrls,
+        });
+      }
+
+      // If user replied to a specific message that isn't in recent memory, enrich with referenced message
+      if (
+        referencedMessage &&
+        !history.some((h) => h.content === (referencedMessage!.cleanContent || referencedMessage!.content))
+      ) {
+        const isRefBot = referencedMessage.author.id === botId;
+        history.push({
+          role: isRefBot ? 'assistant' : 'user',
+          authorName: isRefBot ? 'NekoAI' : referencedMessage.author.displayName || referencedMessage.author.username,
+          content: referencedMessage.cleanContent || referencedMessage.content,
+        });
+      }
+    } else if (referencedMessage) {
+      // Memory buffer empty (e.g. fresh start or after restart), fetch from reply chain
+      await fetchReplyChain(referencedMessage, history, botId, 6);
     }
 
     // 5. Build Conversation Payload
@@ -148,6 +193,20 @@ export async function handleMessage(message: Message, client: Client): Promise<v
         }
       }
     }
+
+    // 11. Record conversation turn to memory for long-term channel context
+    conversationManager.addMessage(message.channel.id, {
+      role: 'user',
+      authorName: message.author.displayName || message.author.username,
+      content: cleanContent,
+      imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+    });
+
+    conversationManager.addMessage(message.channel.id, {
+      role: 'assistant',
+      authorName: 'NekoAI',
+      content: formattedReply,
+    });
   } catch (error: any) {
     console.error('[ERROR] Error handling message:', error);
     const errorNotice = ActParser.format(
