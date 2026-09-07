@@ -363,7 +363,22 @@ export class OpenRouterClient {
     // 1. Remove XML thinking tags (<think>, <thought>, <reasoning>, <reflection>, <analysis>)
     text = text.replace(/<(think|thought|reasoning|reflection|analysis)>[\s\S]*?<\/\1>/gi, '').trim();
 
-    // 2. Look for character ACT token anchor
+    // 2. If 'Revised Response' or 'Final Response' header exists, grab only the revised dialogue section
+    const revisionRegex = /(?:^|\n)\s*\*?\s*(?:Revised|Final)\s+(?:Response|Output|Answer)\s*:?\*?\s*([\s\S]+)$/i;
+    const revisionMatch = text.match(revisionRegex);
+    if (revisionMatch && revisionMatch[1]) {
+      text = revisionMatch[1].trim();
+    }
+
+    // 3. Strip checklist items like "* Name: NekoAI? Yes." or "* 15yo girl? Yes."
+    text = text.replace(/^\s*\*\s*[\w\s-]+\?\s*(?:Yes|No|OK|Checked)\.?\s*$/gim, '').trim();
+
+    // 4. Strip self-correction / drafting notes / metadata headers
+    text = text.replace(/\*?Self-Correction[^:]*:\*?[^\n]*\n?/gi, '').trim();
+    text = text.replace(/\*?Draft[^:]*:\*?[^\n]*\n?/gi, '').trim();
+    text = text.replace(/^\s*\*?\s*Text:\s*"?/gim, '').trim();
+
+    // 5. Look for character ACT token anchor
     const actIndex = text.search(/<\|ACT\s+.*?\|>/i);
     if (actIndex !== -1) {
       const responsePart = text.substring(actIndex).trim();
@@ -372,7 +387,7 @@ export class OpenRouterClient {
       }
     }
 
-    // 3. Response boundary markers ("Final response:", "Response:", "Output:", "Structure:", "Let's craft the response:")
+    // 6. Response boundary markers ("Final response:", "Response:", "Output:", "Structure:", "Let's craft the response:")
     const responseHeaderRegex = /(?:^|\n)(?:(?:Final\s+)?(?:Response|Output|Answer)|Draft|Structure|Let's craft the response:?)\s*:\s*([\s\S]+)$/i;
     const headerMatch = text.match(responseHeaderRegex);
     if (headerMatch && headerMatch[1]) {

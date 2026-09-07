@@ -315,17 +315,28 @@ export class GeminiClient {
    */
   private cleanThinkingTrace(text: string): string {
     let cleaned = text.replace(/<(think|thought|reasoning|reflection|analysis)>[\s\S]*?<\/\1>/gi, '').trim();
+
+    // If 'Revised Response' or 'Final Response' header exists, grab only the revised dialogue section
+    const revisionRegex = /(?:^|\n)\s*\*?\s*(?:Revised|Final)\s+(?:Response|Output|Answer)\s*:?\*?\s*([\s\S]+)$/i;
+    const revisionMatch = cleaned.match(revisionRegex);
+    if (revisionMatch && revisionMatch[1]) {
+      cleaned = revisionMatch[1].trim();
+    }
+
+    // Strip checklist items like "* Name: NekoAI? Yes." or "* 15yo girl? Yes."
+    cleaned = cleaned.replace(/^\s*\*\s*[\w\s-]+\?\s*(?:Yes|No|OK|Checked)\.?\s*$/gim, '').trim();
+
+    // Strip self-correction / drafting notes / metadata headers
+    cleaned = cleaned.replace(/\*?Self-Correction[^:]*:\*?[^\n]*\n?/gi, '').trim();
+    cleaned = cleaned.replace(/\*?Draft[^:]*:\*?[^\n]*\n?/gi, '').trim();
+    cleaned = cleaned.replace(/^\s*\*?\s*Text:\s*"?/gim, '').trim();
+    cleaned = cleaned.replace(/^(?:Structure|Then body|Body|Response|Final response|Output):\s*/gim, '').trim();
+
     const actIndex = cleaned.search(/<\|ACT\s+.*?\|>/i);
     if (actIndex !== -1) {
       cleaned = cleaned.substring(actIndex).trim();
-    } else {
-      const responseHeaderRegex = /(?:^|\n)(?:(?:Final\s+)?(?:Response|Output|Answer)|Draft|Structure|Let's craft the response:?)\s*:\s*([\s\S]+)$/i;
-      const headerMatch = cleaned.match(responseHeaderRegex);
-      if (headerMatch && headerMatch[1]) {
-        cleaned = headerMatch[1].trim();
-      }
     }
-    return cleaned.replace(/^(?:Structure|Then body|Body|Response|Final response|Output):\s*/gim, '').trim();
+    return cleaned;
   }
 
   /**

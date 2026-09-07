@@ -61,19 +61,29 @@ export class OutputGuard {
       .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
       .trim();
 
-    // 6. Strip thinking process dumps and extract clean character response
+    // 6. Strip thinking process dumps, checklists, self-corrections, and extract clean character response
     sanitized = sanitized.replace(/<(think|thought|reasoning|reflection|analysis)>[\s\S]*?<\/\1>/gi, '').trim();
+
+    // If 'Revised Response' or 'Final Response' header exists, grab only the revised dialogue section
+    const revisionRegex = /(?:^|\n)\s*\*?\s*(?:Revised|Final)\s+(?:Response|Output|Answer)\s*:?\*?\s*([\s\S]+)$/i;
+    const revisionMatch = sanitized.match(revisionRegex);
+    if (revisionMatch && revisionMatch[1]) {
+      sanitized = revisionMatch[1].trim();
+    }
+
+    // Strip checklist items like "* Name: NekoAI? Yes." or "* 15yo girl? Yes."
+    sanitized = sanitized.replace(/^\s*\*\s*[\w\s-]+\?\s*(?:Yes|No|OK|Checked)\.?\s*$/gim, '').trim();
+
+    // Strip self-correction / drafting notes / metadata headers
+    sanitized = sanitized.replace(/\*?Self-Correction[^:]*:\*?[^\n]*\n?/gi, '').trim();
+    sanitized = sanitized.replace(/\*?Draft[^:]*:\*?[^\n]*\n?/gi, '').trim();
+    sanitized = sanitized.replace(/^\s*\*?\s*Text:\s*"?/gim, '').trim();
+    sanitized = sanitized.replace(/^(?:Structure|Then body|Body|Response|Final response|Output):\s*/gim, '').trim();
+
     const actIndex = sanitized.search(/<\|ACT\s+.*?\|>/i);
     if (actIndex !== -1) {
       sanitized = sanitized.substring(actIndex).trim();
-    } else {
-      const responseHeaderRegex = /(?:^|\n)(?:(?:Final\s+)?(?:Response|Output|Answer)|Draft|Structure|Let's craft the response:?)\s*:\s*([\s\S]+)$/i;
-      const headerMatch = sanitized.match(responseHeaderRegex);
-      if (headerMatch && headerMatch[1]) {
-        sanitized = headerMatch[1].trim();
-      }
     }
-    sanitized = sanitized.replace(/^(?:Structure|Then body|Body|Response|Final response|Output):\s*/gim, '').trim();
 
     // 7. Suppress link embeds: wrap markdown links and standalone URLs in angle brackets <URL>
     // Convert [title](url) to [title](<url>) if not already wrapped
