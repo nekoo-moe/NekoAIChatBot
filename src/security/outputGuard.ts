@@ -16,11 +16,17 @@ export class OutputGuard {
   public sanitize(output: string): string {
     let sanitized = output;
 
-    // 1. Redact any leaked OpenRouter API Keys
+    // 1. Redact any leaked OpenRouter or Gemini API Keys
     sanitized = sanitized.replace(/sk-or-v1-[a-zA-Z0-9_-]{32,}/g, '[REDACTED_API_KEY]');
+    sanitized = sanitized.replace(/AIzaSy[a-zA-Z0-9_-]{30,40}/g, '[REDACTED_GEMINI_KEY]');
 
     // 2. Redact any configured keys from .env
     for (const key of config.openRouterApiKeys) {
+      if (key && key.length > 8) {
+        sanitized = sanitized.split(key).join('[REDACTED_KEY]');
+      }
+    }
+    for (const key of config.geminiApiKeys) {
       if (key && key.length > 8) {
         sanitized = sanitized.split(key).join('[REDACTED_KEY]');
       }

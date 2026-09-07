@@ -2,7 +2,7 @@ import { Message, Client, ChannelType, MessageFlags } from 'discord.js';
 import { RateLimiter } from '../../security/rateLimiter.js';
 import { InjectionDetector } from '../../security/injectionDetector.js';
 import { OutputGuard } from '../../security/outputGuard.js';
-import { OpenRouterClient } from '../../openrouter/client.js';
+import { LLMRouter } from '../../llm/llmRouter.js';
 import { buildConversationContext } from '../../prompt/contextBuilder.js';
 import { ToolRegistry } from '../../tools/toolRegistry.js';
 import { SearchRouter } from '../../tools/search/searchRouter.js';
@@ -160,9 +160,9 @@ export async function handleMessage(message: Message, client: Client): Promise<v
       },
     });
 
-    // 6. Request Completion from OpenRouter with Web Grounding Plugin and Auto-Rotation
-    const openRouter = OpenRouterClient.getInstance();
-    const result = await openRouter.generateChatCompletion({
+    // 6. Request Completion from Unified LLM Router (Gemini or OpenRouter with auto-failover)
+    const llmRouter = LLMRouter.getInstance();
+    const result = await llmRouter.generateChatCompletion({
       messages,
       hasImages: imageUrls.length > 0,
     });

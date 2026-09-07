@@ -4,6 +4,8 @@ import { config } from '../config.js';
 
 // Curated high-performing free text models ranked by instruction-following, context size, and roleplay ability
 export const CURATED_FREE_TEXT_MODELS = [
+  'google/gemma-4-31b-it:free',
+  'google/gemma-4-26b-a4b-it:free',
   'minimax/minimax-m3:free',
   'nvidia/nemotron-3-ultra-550b-a55b:free',
   'poolside/laguna-s-2.1:free',
@@ -15,8 +17,6 @@ export const CURATED_FREE_TEXT_MODELS = [
   'inclusionai/ling-3.0-flash-sante:free',
   'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   'cohere/north-mini-code:free',
-  'google/gemma-4-31b-it:free',
-  'google/gemma-4-26b-a4b-it:free',
   'meta-llama/llama-3.3-70b-instruct:free',
   'deepseek/deepseek-r1:free',
   'openrouter/free', // Fallback safety net at the very end

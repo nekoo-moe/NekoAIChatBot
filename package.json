@@ -10,7 +10,8 @@
     "test:search": "tsx test/test-search.ts",
     "test:security": "tsx test/test-security.ts",
     "test:models": "tsx test/test-models.ts",
-    "test:memory": "tsx test/test-conversation-memory.ts"
+    "test:memory": "tsx test/test-conversation-memory.ts",
+    "test:gemini": "tsx test/test-gemini.ts"
   },
   "keywords": [
     "discord-bot",

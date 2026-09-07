@@ -6,7 +6,10 @@ dotenv.config();
 const envSchema = z.object({
   DISCORD_BOT_TOKEN: z.string().min(1, 'DISCORD_BOT_TOKEN is required in .env'),
   DISCORD_CLIENT_ID: z.string().optional(),
-  OPENROUTER_API_KEYS: z.string().min(1, 'OPENROUTER_API_KEYS is required in .env'),
+  OPENROUTER_API_KEYS: z.string().optional().default(''),
+  GEMINI_API_KEYS: z.string().optional().default(''),
+  LLM_PROVIDER: z.enum(['auto', 'gemini', 'openrouter']).default('auto'),
+  DEFAULT_GEMINI_MODEL: z.string().optional().default('gemini-2.0-flash'),
   DEFAULT_TEXT_MODEL: z.string().optional().default(''),
   DEFAULT_VISION_MODEL: z.string().optional().default(''),
   MODEL_FETCH_INTERVAL_HOURS: z.coerce.number().positive().default(6),
@@ -31,12 +34,17 @@ export const config = parsedEnv.success
   ? {
       ...parsedEnv.data,
       openRouterApiKeys: parsedEnv.data.OPENROUTER_API_KEYS.split(',').map((k) => k.trim()).filter(Boolean),
+      geminiApiKeys: parsedEnv.data.GEMINI_API_KEYS.split(',').map((k) => k.trim()).filter(Boolean),
     }
   : {
       DISCORD_BOT_TOKEN: process.env.DISCORD_BOT_TOKEN || '',
       DISCORD_CLIENT_ID: process.env.DISCORD_CLIENT_ID || '',
       OPENROUTER_API_KEYS: process.env.OPENROUTER_API_KEYS || '',
+      GEMINI_API_KEYS: process.env.GEMINI_API_KEYS || '',
+      LLM_PROVIDER: (process.env.LLM_PROVIDER as any) || 'auto',
+      DEFAULT_GEMINI_MODEL: process.env.DEFAULT_GEMINI_MODEL || 'gemini-2.0-flash',
       openRouterApiKeys: (process.env.OPENROUTER_API_KEYS || '').split(',').map((k) => k.trim()).filter(Boolean),
+      geminiApiKeys: (process.env.GEMINI_API_KEYS || '').split(',').map((k) => k.trim()).filter(Boolean),
       DEFAULT_TEXT_MODEL: process.env.DEFAULT_TEXT_MODEL || '',
       DEFAULT_VISION_MODEL: process.env.DEFAULT_VISION_MODEL || '',
       MODEL_FETCH_INTERVAL_HOURS: 6,
