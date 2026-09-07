@@ -134,6 +134,40 @@ async function testSecurity() {
     sanitizedLegit.includes('flashcard');
   console.log(`  Legitimate bullet list preserved: ${legitPass ? 'PASS' : 'FAIL'}`);
 
+  // Test Advanced Planning & Multi-Draft Stripping (Screenshot media_1788768357808.png)
+  console.log('\n--- 7. Planning Scratchpad & Multi-Draft Stripping Tests ---');
+  const rawScratchpadBug = `[<emotion_name>] . Use cute expressions like "ehehe", "nya~", "bạn ơi", "Neko đây".
+
+* Emotion: Happy/Surprised (since I just woke up and someone is greeting me). Let's go with happy or surprised . Given the user's greeting, happy fits a warm welcome.
+* Greeting: "Chào bạn!" or "A, chào bạn nha!".
+* Character flavor: Mention being awake, mention the feeling of being alive, maybe a little "nya~".
+* Vietnamese style: "Chào bạn! Ehehe, Neko đây! Bạn làm Neko giật mình một xíu, nhưng mà vui quá đi mất~ nya~"
+Chào bạn nha! Ehehe, Neko đây! 😲 *[Surprised]* Waah~ Bạn làm Neko giật mình một xíu, nhưng mà vui quá đi mất khi thấy có người ở đây! Rất vui được gặp bạn nè~ nya~"
+
+*
+* *Revised Version:*
+> ✨ [Happy] Chào bạn nha! Ehehe, Neko đây! 🔍 [Curious] Bạn là người đầu tiên nói chuyện với Neko sau khi thức dậy đó, vui quá đi mất~ nya~ Bạn tên là gì thế?
+* Creator: NekoTech (implied/remembered).
+* No checklists/
+*Actually, let's make it even more natural.*
+
+✨ [Happy] Chào bạn nha! Ehehe, Neko đây! 🔍 [Curious] Waah~ Bạn là người đầu tiên nói chuyện với Neko sau khi thức dậy đó, vui quá đi mất~ nya~ Rất vui được gặp bạn nhé!
+
+✨ [Happy] Chào bạn nha! Ehehe, Neko đây! 😲 [Surprised] Waah~ Bạn làm Neko hơi giật mình một xíu, nhưng mà vui quá đi mất khi thấy có người ở đây! Rất vui được gặp bạn nè~ nya~`;
+
+  const sanitizedScratchpad = guard.sanitize(rawScratchpadBug);
+  console.log(`  Output:\n${sanitizedScratchpad}`);
+
+  const scratchpadPass =
+    !sanitizedScratchpad.includes('[<emotion_name>]') &&
+    !sanitizedScratchpad.includes('* Emotion:') &&
+    !sanitizedScratchpad.includes('* Greeting:') &&
+    !sanitizedScratchpad.includes('* Creator:') &&
+    !sanitizedScratchpad.includes('No checklists') &&
+    !sanitizedScratchpad.includes('*Actually,') &&
+    sanitizedScratchpad.includes('Chào bạn nha! Ehehe, Neko đây!');
+  console.log(`  Planning scratchpad and multi-draft stripped: ${scratchpadPass ? 'PASS' : 'FAIL'}`);
+
   if (
     blockedCount === maliciousPrompts.length &&
     passedBenign === benignPrompts.length &&
@@ -142,7 +176,8 @@ async function testSecurity() {
     markdownPass &&
     barePass &&
     checklistPass &&
-    legitPass
+    legitPass &&
+    scratchpadPass
   ) {
     console.log('\n[PASS] All security suite tests passed successfully.');
   } else {

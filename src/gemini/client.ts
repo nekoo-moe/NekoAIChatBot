@@ -169,7 +169,10 @@ export class GeminiClient {
           throw new Error('Empty response candidate received from Gemini API.');
         }
 
-        const rawText = candidate.content.parts
+        // Filter out thought parts if Gemini returns separated thought parts
+        const contentParts = candidate.content.parts.filter((p: any) => !p.thought && p.text);
+        const partsToUse = contentParts.length > 0 ? contentParts : candidate.content.parts;
+        const rawText = partsToUse
           .map((p) => p.text || '')
           .filter(Boolean)
           .join('\n')

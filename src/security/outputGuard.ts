@@ -61,23 +61,33 @@ export class OutputGuard {
       .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
       .trim();
 
-    // 6. Strip thinking process dumps, checklists, self-corrections, and extract clean character response
+    // 6. Strip prompt echo at start (e.g. "[<emotion_name>] . Use cute expressions...")
+    sanitized = sanitized.replace(/^\[?<emotion_name>\]?[^\n]*(?:\r?\n)?/gi, '');
+    sanitized = sanitized.replace(/^.*?Use cute expressions like[^\n]*(?:\r?\n)?/gim, '');
+
+    // 7. Strip thinking process dumps, checklists, self-corrections, and extract clean character response
     sanitized = sanitized.replace(/<(think|thought|reasoning|reflection|analysis)>[\s\S]*?<\/\1>/gi, '').trim();
 
     // If 'Revised Response' or 'Final Response' header exists, grab only the revised dialogue section
-    const revisionRegex = /(?:^|\n)\s*\*?\s*(?:Revised|Final)\s+(?:Response|Output|Answer)\s*:?\*?\s*([\s\S]+)$/i;
+    const revisionRegex = /(?:^|\n)\s*\*?\s*(?:Revised|Final)\s+(?:Response|Output|Answer|Version)\s*:?\*?\s*([\s\S]+)$/i;
     const revisionMatch = sanitized.match(revisionRegex);
     if (revisionMatch && revisionMatch[1]) {
       sanitized = revisionMatch[1].trim();
     }
 
-    // Strip markdown code blocks containing checklists or prompt verification
+    // Strip markdown code blocks containing checklists, planning, or prompt verification
     sanitized = sanitized.replace(/```(?:markdown|text|json|yaml)?\s*[\s\S]*?```/gi, (match) => {
-      if (/(?:ACT|DELAY|CALL|persona|instruction|identity|token|\?|Yes|No|Not needed)/i.test(match)) {
+      if (/(?:ACT|DELAY|CALL|persona|instruction|identity|token|emotion|greeting|flavor|style|\?|Yes|No|Not needed)/i.test(match)) {
         return '';
       }
       return match;
     });
+
+    // Strip planning bullet points (e.g. * Emotion:, * Greeting:, * Character flavor:, * Vietnamese style:, * Creator:)
+    sanitized = sanitized.replace(
+      /^\s*[\*\-•]\s*\*?(?:Emotion|Greeting|Character|Vietnamese|Creator|No checklists|Actually|Revised|Draft|Note|Plan|Thought|Identity|Tone|Language|Style|Reasoning|Persona|Checklist)\b[^\n]*(?:\r?\n)?/gim,
+      ''
+    );
 
     // Strip QA checklists / rule verifications:
     // Pattern A: Bullets with question and answer
@@ -96,6 +106,12 @@ export class OutputGuard {
       ''
     );
 
+    // Strip italicized internal reflections like "*Actually, let's make it even more natural.*"
+    sanitized = sanitized.replace(/^\s*\*+[A-Za-z\s,'.!/-]+\*+\s*(?:\r?\n)?/gm, '');
+
+    // Strip stray bullets on empty lines (e.g. "*" or "* *")
+    sanitized = sanitized.replace(/^\s*[\*\-•]+\s*$/gm, '');
+
     // Strip self-correction / drafting notes / metadata headers
     sanitized = sanitized.replace(/\*?Self-Correction[^:]*:\*?[^\n]*(?:\r?\n)?/gi, '');
     sanitized = sanitized.replace(/\*?Draft[^:]*:\*?[^\n]*\n?/gi, '');
@@ -107,7 +123,7 @@ export class OutputGuard {
 
     // Strip blockquotes that start with ACT or quote dialogue
     sanitized = sanitized.replace(/^>\s*<\|ACT[\s\S]*?(?=(?:\r?\n[^\r\n>])|$)/gim, '');
-    sanitized = sanitized.replace(/^>\s*✨\s*\[[\s\S]*?(?=(?:\r?\n[^\r\n>])|$)/gim, '');
+    sanitized = sanitized.replace(/^>\s*✨\s*\*?\[[\s\S]*?(?=(?:\r?\n[^\r\n>])|$)/gim, '');
 
     // Deduplicate consecutive identical lines
     const lines = sanitized.split(/\r?\n/);
@@ -123,7 +139,7 @@ export class OutputGuard {
     sanitized = dedupedLines.join('\n');
 
     // Deduplicate repeated blocks / paragraphs
-    const blocks = sanitized.split(/\r?\n\s*\r?\n/).map((b) => b.trim()).filter(Boolean);
+    let blocks = sanitized.split(/\r?\n\s*\r?\n/).map((b) => b.trim()).filter(Boolean);
     const seenBlocks = new Set<string>();
     const uniqueBlocks: string[] = [];
 
@@ -144,7 +160,42 @@ export class OutputGuard {
       uniqueBlocks.push(block);
     }
 
-    sanitized = uniqueBlocks.join('\n\n').trim();
+    blocks = uniqueBlocks;
+
+    // Discard earlier drafts if a later revision with the same opening greeting exists
+    if (blocks.length > 1) {
+      const finalBlocks: string[] = [];
+      for (let i = 0; i < blocks.length; i++) {
+        const currentBlock = blocks[i];
+        const currentPrefix = currentBlock
+          .replace(/<\|ACT\s+.*?\|>/gi, '')
+          .replace(/^[>\s*-]+/, '')
+          .trim()
+          .substring(0, 25)
+          .toLowerCase();
+
+        let hasLaterAlternative = false;
+        for (let j = i + 1; j < blocks.length; j++) {
+          const nextPrefix = blocks[j]
+            .replace(/<\|ACT\s+.*?\|>/gi, '')
+            .replace(/^[>\s*-]+/, '')
+            .trim()
+            .substring(0, 25)
+            .toLowerCase();
+          if (currentPrefix.length >= 10 && nextPrefix.length >= 10 && currentPrefix === nextPrefix) {
+            hasLaterAlternative = true;
+            break;
+          }
+        }
+
+        if (!hasLaterAlternative) {
+          finalBlocks.push(currentBlock);
+        }
+      }
+      blocks = finalBlocks;
+    }
+
+    sanitized = blocks.join('\n\n').trim();
 
     // Deduplicate exact duplicate back-to-back repeat
     const halfLen = Math.floor(sanitized.length / 2);
@@ -154,7 +205,7 @@ export class OutputGuard {
       sanitized = firstHalf;
     }
 
-    const actIndex = sanitized.search(/<\|ACT\s+.*?\|>/i);
+    const actIndex = sanitized.search(/(?:<\|ACT\s+.*?\|>|✨\s*\*?\[[A-Za-z]+\]\*?)/i);
     if (actIndex !== -1) {
       sanitized = sanitized.substring(actIndex).trim();
     }
