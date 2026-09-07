@@ -17,20 +17,27 @@ export interface GeminiResponseResult {
   retriesCount: number;
 }
 
+// Modern fallback models list (Gemini 3.6 & Gemma 4)
 const FALLBACK_GEMINI_MODELS = [
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite-preview-02-05',
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
+  'gemini-3.6-flash',
+  'gemma-4-31b-it',
+  'gemma-4-26b-a4b-it',
+  'gemma-3-27b-it',
+  'gemma-2-27b-it',
+  'gemma-2-9b-it',
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
 ];
 
 export class GeminiClient {
   private static instance: GeminiClient;
   private currentKeyIndex = 0;
-  private activeModel: string = 'gemini-2.0-flash';
+  private activeModel: string = 'gemini-3.6-flash';
+  private discoveredModels: string[] = [];
+  private lastDiscoveryTime: number = 0;
 
   private constructor() {
-    this.activeModel = config.DEFAULT_GEMINI_MODEL || 'gemini-2.0-flash';
+    this.activeModel = config.DEFAULT_GEMINI_MODEL || 'gemini-3.6-flash';
   }
 
   public static getInstance(): GeminiClient {
@@ -57,14 +64,53 @@ export class GeminiClient {
   }
 
   /**
-   * Generates a chat completion using Google Gemini API with automatic model fallback and key rotation
+   * Queries Google Gemini API /models endpoint to discover all active models supporting generateContent
+   */
+  public async refreshModels(): Promise<string[]> {
+    try {
+      const apiKey = this.getApiKey();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+      const response = await axios.get<{
+        models?: Array<{ name: string; supportedGenerationMethods?: string[] }>;
+      }>(url, { timeout: 10000 });
+
+      if (response.data && Array.isArray(response.data.models)) {
+        const validModels = response.data.models
+          .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
+          .map((m) => m.name.replace(/^models\//, ''));
+
+        if (validModels.length > 0) {
+          this.discoveredModels = validModels;
+          this.lastDiscoveryTime = Date.now();
+          console.log(
+            `[GEMINI] Discovered ${validModels.length} active models from Gemini API: ${validModels.slice(0, 6).join(', ')}...`
+          );
+          return validModels;
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[GEMINI] Dynamic model discovery failed: ${err.message}. Using modern fallback list.`);
+    }
+    return [];
+  }
+
+  /**
+   * Generates a chat completion using Google Gemini API with automatic model discovery, fallback, and key rotation
    */
   public async generateChatCompletion(options: GeminiResponseOptions): Promise<GeminiResponseResult> {
+    // Refresh model catalog if not yet discovered or older than 2 hours
+    if (this.discoveredModels.length === 0 || Date.now() - this.lastDiscoveryTime > 2 * 60 * 60 * 1000) {
+      await this.refreshModels().catch(() => {});
+    }
+
     const candidateModels = this.getModelCandidates();
     let lastError: Error | null = null;
     let attempts = 0;
 
-    for (const model of candidateModels) {
+    for (const rawModel of candidateModels) {
+      const model = rawModel.replace(/^models\//, '');
+      const isGemma = model.toLowerCase().includes('gemma');
+
       try {
         attempts++;
         const apiKey = this.getApiKey();
@@ -85,26 +131,44 @@ export class GeminiClient {
           payload.systemInstruction = systemInstruction;
         }
 
-        // Enable Google Search Grounding if configured and no search context already supplied
-        if (config.ENABLE_WEB_SEARCH && !options.hasSearchContext) {
+        // Enable Google Search Grounding for Gemini models if configured
+        // (Gemma open-weight models do not support the googleSearch tool parameter)
+        if (config.ENABLE_WEB_SEARCH && !options.hasSearchContext && !isGemma) {
           payload.tools = [{ googleSearch: {} }];
         }
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-        const response = await axios.post<GeminiResponse>(url, payload, {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          timeout: 45000,
-        });
+        let response;
+        try {
+          response = await axios.post<GeminiResponse>(url, payload, {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            timeout: 45000,
+          });
+        } catch (postError: any) {
+          // If error was 400 due to tool unsupported, retry once without tools
+          const status = postError.response?.status;
+          const msg = postError.response?.data?.error?.message || '';
+          if (status === 400 && payload.tools && (msg.includes('tool') || msg.includes('search') || msg.includes('googleSearch'))) {
+            console.warn(`[GEMINI] Model [${model}] does not support search tool. Retrying without tools...`);
+            delete payload.tools;
+            response = await axios.post<GeminiResponse>(url, payload, {
+              headers: { 'Content-Type': 'application/json' },
+              timeout: 45000,
+            });
+          } else {
+            throw postError;
+          }
+        }
 
         const candidate = response.data.candidates?.[0];
         if (!candidate || !candidate.content || !candidate.content.parts) {
           throw new Error('Empty response candidate received from Gemini API.');
         }
 
-        let rawText = candidate.content.parts
+        const rawText = candidate.content.parts
           .map((p) => p.text || '')
           .filter(Boolean)
           .join('\n')
@@ -124,7 +188,7 @@ export class GeminiClient {
         // Clean thinking trace if model produced any reasoning notes
         const cleanedText = this.cleanThinkingTrace(rawText);
 
-        // Lock onto this working model
+        // Lock onto this working model as sticky active model
         this.activeModel = model;
 
         return {
@@ -145,7 +209,7 @@ export class GeminiClient {
         }
 
         // Delay briefly before trying fallback
-        await new Promise((res) => setTimeout(res, 800));
+        await new Promise((res) => setTimeout(res, 600));
       }
     }
 
@@ -191,7 +255,6 @@ export class GeminiClient {
       }
 
       if (parts.length > 0) {
-        // Gemini requires alternating roles or merges consecutive same-role messages
         const prevContent = contents[contents.length - 1];
         if (prevContent && prevContent.role === role) {
           prevContent.parts.push(...parts);
@@ -214,7 +277,6 @@ export class GeminiClient {
    */
   private async fetchImageInlineData(url: string): Promise<GeminiPart | null> {
     try {
-      // If already data URI
       if (url.startsWith('data:')) {
         const matches = url.match(/^data:([^;]+);base64,(.+)$/);
         if (matches) {
@@ -249,7 +311,7 @@ export class GeminiClient {
   }
 
   /**
-   * Cleans residual thinking process or reasoning tags from model responses
+   * Cleans residual thinking trace or reasoning tags from model responses
    */
   private cleanThinkingTrace(text: string): string {
     let cleaned = text.replace(/<(think|thought|reasoning|reflection|analysis)>[\s\S]*?<\/\1>/gi, '').trim();
@@ -267,13 +329,48 @@ export class GeminiClient {
   }
 
   /**
-   * Returns candidate model list with sticky active model at the front
+   * Prioritizes active model, Gemma 4, Gemini 3.6, Gemma 3, and all available models
    */
   private getModelCandidates(): string[] {
-    const list = [
-      this.activeModel,
-      ...FALLBACK_GEMINI_MODELS.filter((m) => m !== this.activeModel),
-    ];
+    const list: string[] = [];
+
+    // 1. User configured or sticky active model first
+    if (this.activeModel) {
+      list.push(this.activeModel);
+    }
+    if (config.DEFAULT_GEMINI_MODEL && !list.includes(config.DEFAULT_GEMINI_MODEL)) {
+      list.push(config.DEFAULT_GEMINI_MODEL);
+    }
+
+    // 2. Discovered models sorted by priority
+    if (this.discoveredModels.length > 0) {
+      // Prioritize Gemma 4
+      const gemma4 = this.discoveredModels.filter((m) => m.toLowerCase().includes('gemma-4'));
+      list.push(...gemma4);
+
+      // Prioritize Gemini 3.6 / Gemini 3
+      const gemini3 = this.discoveredModels.filter((m) => m.toLowerCase().includes('gemini-3'));
+      list.push(...gemini3);
+
+      // Other Gemma models
+      const otherGemma = this.discoveredModels.filter((m) => m.toLowerCase().includes('gemma') && !m.toLowerCase().includes('gemma-4'));
+      list.push(...otherGemma);
+
+      // Other Gemini models
+      const otherGemini = this.discoveredModels.filter((m) => m.toLowerCase().includes('gemini') && !m.toLowerCase().includes('gemini-3'));
+      list.push(...otherGemini);
+
+      // Remaining discovered
+      for (const m of this.discoveredModels) {
+        if (!list.includes(m)) list.push(m);
+      }
+    }
+
+    // 3. Append modern fallbacks
+    for (const m of FALLBACK_GEMINI_MODELS) {
+      if (!list.includes(m)) list.push(m);
+    }
+
     return Array.from(new Set(list));
   }
 }
