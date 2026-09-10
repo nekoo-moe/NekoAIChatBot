@@ -17,6 +17,7 @@ export class OpenAIClient {
   private currentKeyIndex = 0;
   private discoveredModels: string[] = [];
   private lastDiscoveryTime = 0;
+  private activeModel: string = config.DEFAULT_OPENAI_MODEL || 'gpt-4o-mini';
 
   private constructor() {}
 
@@ -25,6 +26,26 @@ export class OpenAIClient {
       OpenAIClient.instance = new OpenAIClient();
     }
     return OpenAIClient.instance;
+  }
+
+  public getActiveModel(): string {
+    return this.activeModel;
+  }
+
+  public setActiveModel(model: string): void {
+    if (model) {
+      this.activeModel = model.trim();
+      console.log(`[OPENAI] Active model switched to: [${this.activeModel}]`);
+    }
+  }
+
+  public getAvailableModels(): string[] {
+    const list = [...this.discoveredModels];
+    const defaults = ['gpt-4o-mini', 'gpt-4o', 'deepseek-chat', 'deepseek-reasoner', 'llama-3.3-70b-versatile'];
+    for (const d of defaults) {
+      if (!list.includes(d)) list.push(d);
+    }
+    return list;
   }
 
   /**
@@ -100,7 +121,7 @@ export class OpenAIClient {
    * Generates a chat completion with multi-turn agentic tool calling and fallback retries
    */
   public async generateChatCompletion(options: OpenAIResponseOptions): Promise<OpenAIResponseResult> {
-    const primaryModel = options.model || config.DEFAULT_OPENAI_MODEL || 'gpt-4o-mini';
+    const primaryModel = options.model || this.activeModel || config.DEFAULT_OPENAI_MODEL || 'gpt-4o-mini';
     const baseUrl = this.getBaseUrl();
 
     // Determine candidate models list
@@ -388,3 +409,4 @@ export class OpenAIClient {
     };
   }
 }
+

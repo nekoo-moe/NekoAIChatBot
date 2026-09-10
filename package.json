@@ -12,7 +12,8 @@
     "test:models": "tsx test/test-models.ts",
     "test:memory": "tsx test/test-conversation-memory.ts",
     "test:gemini": "tsx test/test-gemini.ts",
-    "test:openai": "tsx test/test-openai.ts"
+    "test:openai": "tsx test/test-openai.ts",
+    "test:console": "tsx test/test-console.ts"
   },
   "keywords": [
     "discord-bot",

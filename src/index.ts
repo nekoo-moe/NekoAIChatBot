@@ -13,19 +13,33 @@ async function bootstrap() {
     process.exit(1);
   }
 
-  if (!config.OPENROUTER_API_KEYS || config.openRouterApiKeys.length === 0) {
-    console.error('[CONFIG] Missing OPENROUTER_API_KEYS in .env! Please configure at least one key.');
+  const hasOpenRouter = config.openRouterApiKeys && config.openRouterApiKeys.length > 0;
+  const hasGemini = config.geminiApiKeys && config.geminiApiKeys.length > 0;
+  const hasOpenAI =
+    (config.openaiApiKeys && config.openaiApiKeys.length > 0) ||
+    (config.OPENAI_API_BASE && !config.OPENAI_API_BASE.includes('api.openai.com'));
+
+  if (!hasOpenRouter && !hasGemini && !hasOpenAI) {
+    console.error('[CONFIG] Missing API keys! Please configure OPENAI_API_KEYS, GEMINI_API_KEYS, or OPENROUTER_API_KEYS in .env.');
     process.exit(1);
   }
 
-  console.log(`[CONFIG] Loaded ${config.openRouterApiKeys.length} OpenRouter API key(s) for rotation.`);
+  console.log(`[CONFIG] Active Provider Mode: [${config.LLM_PROVIDER.toUpperCase()}]`);
+  console.log(`[CONFIG] OpenAI-Compatible: [${hasOpenAI ? 'CONFIGURED (' + config.openaiApiKeys.length + ' key(s))' : 'NOT SET'}]`);
+  console.log(`[CONFIG] Google Gemini: [${hasGemini ? 'CONFIGURED (' + config.geminiApiKeys.length + ' key(s))' : 'NOT SET'}]`);
+  console.log(`[CONFIG] OpenRouter: [${hasOpenRouter ? 'CONFIGURED (' + config.openRouterApiKeys.length + ' key(s))' : 'NOT SET'}]`);
+  if (config.adminDiscordIds.length > 0) {
+    console.log(`[SECURITY] Admin Console Users: [${config.adminDiscordIds.join(', ')}]`);
+  }
   console.log(`[SECURITY] Prompt injection defense level: [${config.INJECTION_DEFENSE_LEVEL.toUpperCase()}]`);
   console.log(`[SEARCH] Real-time web search: [${config.ENABLE_WEB_SEARCH ? 'ENABLED' : 'DISABLED'}]`);
   console.log(`[FORMATTER] Emotion ACT tokens mode: [${config.PARSE_ACT_TOKENS.toUpperCase()}]`);
 
-  // 1. Initialize OpenRouter dynamic model discovery & rotation
+  // 1. Initialize OpenRouter dynamic model discovery & rotation if enabled
   const modelManager = ModelManager.getInstance();
-  await modelManager.initialize();
+  if (hasOpenRouter) {
+    await modelManager.initialize();
+  }
 
   // 2. Start Discord Bot Client
   const client = createDiscordClient();

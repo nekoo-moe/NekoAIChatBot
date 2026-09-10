@@ -48,6 +48,21 @@ export class GeminiClient {
     return GeminiClient.instance;
   }
 
+  public getActiveModel(): string {
+    return this.activeModel;
+  }
+
+  public setActiveModel(model: string): void {
+    if (model) {
+      this.activeModel = model.trim();
+      console.log(`[GEMINI] Active model switched to: [${this.activeModel}]`);
+    }
+  }
+
+  public getAvailableModels(): string[] {
+    return this.getModelCandidates();
+  }
+
   private getApiKey(): string {
     const keys = config.geminiApiKeys;
     if (!keys || keys.length === 0) {

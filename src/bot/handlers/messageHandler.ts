@@ -9,6 +9,7 @@ import { SearchRouter } from '../../tools/search/searchRouter.js';
 import { chunkMessage } from '../utils/chunker.js';
 import { ActParser } from '../utils/actParser.js';
 import { ConversationManager } from '../../memory/conversationManager.js';
+import { ProviderConsole } from '../console/providerConsole.js';
 import { config } from '../../config.js';
 
 export async function handleMessage(message: Message, client: Client): Promise<void> {
@@ -18,6 +19,7 @@ export async function handleMessage(message: Message, client: Client): Promise<v
   const botId = client.user.id;
   const isMentioned = message.mentions.has(botId);
   const isDM = message.channel.type === ChannelType.DM;
+  const hasCommandPrefix = /^[!/](provider|console|ai-admin|reset|clear)\b/i.test(message.content.trim());
 
   // Check if replying to the bot
   let isReplyToBot = false;
@@ -34,8 +36,8 @@ export async function handleMessage(message: Message, client: Client): Promise<v
     }
   }
 
-  // Trigger only on mention, reply to bot, or DM
-  if (!isMentioned && !isReplyToBot && !isDM) {
+  // Trigger on mention, reply to bot, DM, or explicit command prefix
+  if (!isMentioned && !isReplyToBot && !isDM && !hasCommandPrefix) {
     return;
   }
 
@@ -74,6 +76,34 @@ export async function handleMessage(message: Message, client: Client): Promise<v
       content: resetAck,
       allowedMentions: { repliedUser: false },
       flags: MessageFlags.SuppressEmbeds,
+    });
+    return;
+  }
+
+  // Check if user requested Provider Console (e.g. !provider, !console, !ai-admin, /provider, /console)
+  const isConsoleCommand =
+    /^(?:!provider|!console|!ai-admin|\/provider|\/console)\b/i.test(cleanContent) ||
+    /^(?:bảng\s*điều\s*khiển|provider\s*console|đổi\s*provider|chỉnh\s*provider)\b/i.test(cleanContent);
+
+  if (isConsoleCommand) {
+    const consoleManager = ProviderConsole.getInstance();
+    const isAuthorized = consoleManager.isAuthorized(message.author.id, message.member);
+
+    if (!isAuthorized) {
+      const refusal = ActParser.format(
+        `<|ACT {"emotion":"awkward"}|> W-waah! Bảng điều khiển này là khu vực quản trị viên riêng tư nya~! Bạn không có quyền truy cập đâu nè! <|ACT {"emotion":"angry"}|>`
+      );
+      await message.reply({
+        content: refusal,
+        allowedMentions: { repliedUser: false },
+      });
+      return;
+    }
+
+    const consolePayload = consoleManager.buildConsoleMessage();
+    await message.reply({
+      ...consolePayload,
+      allowedMentions: { repliedUser: false },
     });
     return;
   }

@@ -1,5 +1,6 @@
 import { Client, GatewayIntentBits, Partials, ActivityType } from 'discord.js';
 import { handleMessage } from './handlers/messageHandler.js';
+import { ProviderConsole } from './console/providerConsole.js';
 import { config } from '../config.js';
 
 export function createDiscordClient(): Client {
@@ -28,6 +29,14 @@ export function createDiscordClient(): Client {
       await handleMessage(message, client);
     } catch (err: any) {
       console.error('[ERROR] Unhandled message error:', err);
+    }
+  });
+
+  client.on('interactionCreate', async (interaction) => {
+    try {
+      await ProviderConsole.getInstance().handleInteraction(interaction);
+    } catch (err: any) {
+      console.error('[ERROR] Unhandled interaction error:', err);
     }
   });
 

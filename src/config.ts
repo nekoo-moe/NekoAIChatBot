@@ -6,6 +6,7 @@ dotenv.config();
 const envSchema = z.object({
   DISCORD_BOT_TOKEN: z.string().min(1, 'DISCORD_BOT_TOKEN is required in .env'),
   DISCORD_CLIENT_ID: z.string().optional(),
+  ADMIN_DISCORD_IDS: z.string().optional().default(''),
   OPENROUTER_API_KEYS: z.string().optional().default(''),
   GEMINI_API_KEYS: z.string().optional().default(''),
   OPENAI_API_KEYS: z.string().optional().default(''),
@@ -36,6 +37,7 @@ if (!parsedEnv.success) {
 export const config = parsedEnv.success
   ? {
       ...parsedEnv.data,
+      adminDiscordIds: parsedEnv.data.ADMIN_DISCORD_IDS.split(',').map((id) => id.trim()).filter(Boolean),
       openRouterApiKeys: parsedEnv.data.OPENROUTER_API_KEYS.split(',').map((k) => k.trim()).filter(Boolean),
       geminiApiKeys: parsedEnv.data.GEMINI_API_KEYS.split(',').map((k) => k.trim()).filter(Boolean),
       openaiApiKeys: parsedEnv.data.OPENAI_API_KEYS.split(',').map((k) => k.trim()).filter(Boolean),
@@ -43,6 +45,8 @@ export const config = parsedEnv.success
   : {
       DISCORD_BOT_TOKEN: process.env.DISCORD_BOT_TOKEN || '',
       DISCORD_CLIENT_ID: process.env.DISCORD_CLIENT_ID || '',
+      ADMIN_DISCORD_IDS: process.env.ADMIN_DISCORD_IDS || '',
+      adminDiscordIds: (process.env.ADMIN_DISCORD_IDS || '').split(',').map((id) => id.trim()).filter(Boolean),
       OPENROUTER_API_KEYS: process.env.OPENROUTER_API_KEYS || '',
       GEMINI_API_KEYS: process.env.GEMINI_API_KEYS || '',
       OPENAI_API_KEYS: process.env.OPENAI_API_KEYS || '',

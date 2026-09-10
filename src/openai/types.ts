@@ -64,3 +64,4 @@ export interface OpenAIResponseResult {
   usedModel: string;
   retriesCount: number;
 }
+
